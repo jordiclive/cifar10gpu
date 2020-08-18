@@ -13,7 +13,7 @@ dtype = torch.float32
 
 from Mish.mish import MISH
 from Mish.functional import mish
-
+from pytorch_lightning.metrics import functional as FM
 
 
 # define resnet building blocks
@@ -120,10 +120,17 @@ class ResNet(pl.LightningModule):
         y = y.to( dtype=torch.long)
 
         scores = self(x)
+
         val_loss = F.cross_entropy(scores, y)
 
+        acc = FM.accuracy(scores, y)
 
-        return {'val_loss': val_loss}
+        return {'val_loss': val_loss,'val_acc':acc}
+
+    def test_step(self, batch, batch_idx):
+        result = self.validation_step(batch, batch_idx)
+        result.rename_keys({'val_acc': 'test_acc', 'val_loss': 'test_loss'})
+        return result
 
     def validation_epoch_end(self,outputs):
         val_loss = torch.stack([x['val_loss'] for x in outputs]).mean()
@@ -155,10 +162,12 @@ if __name__ == "__main__":
     DATA = CIFAR10()
     train_loader = DATA.train_dataloader()
     val_loader = DATA.val_dataloader()
+    test_loader = DATA.test_dataloader()
     args = _parse_args()
     model = ResNet18(args)
     checkpoint_callback = ModelCheckpoint(filepath='checkpoints',verbose=True,monitor='val_loss',mode='min')
     trainer = pl.Trainer.from_argparse_args(args,checkpoint_callback=checkpoint_callback) #resume_from_checkpoint
     trainer.fit(model,train_dataloader=train_loader,val_dataloaders=val_loader)
+    trainer.test(test_dataloaders = test_dataloader)
 
 
