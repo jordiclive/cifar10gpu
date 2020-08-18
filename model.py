@@ -6,7 +6,7 @@ import pytorch_lightning as pl
 from torch.nn import Conv2d, MaxPool2d
 from pytorch_lightning.callbacks import ModelCheckpoint
 from argparse import ArgumentParser
-
+from collections import OrderedDict
 device = 'cpu'
 dtype = torch.float32
 
@@ -109,7 +109,7 @@ class ResNet(pl.LightningModule):
 
         log = {'train_loss':loss}
 
-        return {'loss':loss,'progress_bar': log,'log':log}
+        return OrderedDict({'loss':loss,'progress_bar': log,'log':log})
 
 
     def validation_step(self,batch,batch_idx):
@@ -125,11 +125,18 @@ class ResNet(pl.LightningModule):
 
         acc = FM.accuracy(scores, y)
 
-        return {'val_loss': val_loss,'val_acc':acc}
+        return OrderedDict({'val_loss': val_loss,'val_acc':acc})
 
     def test_step(self, batch, batch_idx):
         result = self.validation_step(batch, batch_idx)
-        result.rename_keys({'val_acc': 'test_acc', 'val_loss': 'test_loss'})
+        result['test_acc'] = result.pop('val_acc')
+        result['test_loss'] = result.pop('val_loss')
+        return result
+
+    def test_epoch_end(self, outputs):
+        test_acc = torch.stack([x['test_acc'] for x in outputs]).mean()
+        result = pl.EvalResult()
+        result.log('final_metric', test_acc)
         return result
 
     def validation_epoch_end(self,outputs):
@@ -154,20 +161,33 @@ def _parse_args():
     parser.add_argument('--num_classes', default = 10, type = int)
     parser.add_argument('--max_epochs',default=15, type= int)
     parser.add_argument('--gpus',default=0, type=int)
+    parser.add_argument('--save_top_k', default = 1, type=int)
+    parser.add_argument('--resume_from_checkpoint', default = None, type=str)
+
     args = parser.parse_args()
     return args
 
 if __name__ == "__main__":
     from data.data import CIFAR10
+
+    from pathlib import Path
+
+
+
+
     DATA = CIFAR10()
     train_loader = DATA.train_dataloader()
     val_loader = DATA.val_dataloader()
     test_loader = DATA.test_dataloader()
+
     args = _parse_args()
     model = ResNet18(args)
-    checkpoint_callback = ModelCheckpoint(filepath='checkpoints',verbose=True,monitor='val_loss',mode='min')
-    trainer = pl.Trainer.from_argparse_args(args,checkpoint_callback=checkpoint_callback) #resume_from_checkpoint
-    trainer.fit(model,train_dataloader=train_loader,val_dataloaders=val_loader)
-    trainer.test(test_dataloaders = test_dataloader)
+    ckpt_path = str(Path(__file__).parents[0].resolve() / "checkpoints/")
+    checkpoint_callback = ModelCheckpoint(filepath=ckpt_path,save_top_k=args.save_top_k,verbose=True,monitor='val_loss',mode='min')
 
+
+    trainer = pl.Trainer.from_argparse_args(args,checkpoint_callback=checkpoint_callback)
+    trainer.fit(model,train_dataloader=train_loader,val_dataloaders=val_loader)
+    trainer.test(test_dataloaders = test_loader)
+    print(checkpoint_callback.best_model_path)
 
