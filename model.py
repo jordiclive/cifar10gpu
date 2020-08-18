@@ -163,14 +163,14 @@ def _parse_args():
     parser.add_argument('--gpus',default=0, type=int)
     parser.add_argument('--save_top_k', default = 1, type=int)
     parser.add_argument('--resume_from_checkpoint', default = None, type=str)
-
+    parser.add_argument('--ckpt_path', default='gs://model-experiment',type=str)
     args = parser.parse_args()
     return args
 
 if __name__ == "__main__":
     from data.data import CIFAR10
 
-    from pathlib import Path
+    #from pathlib import Path
 
 
 
@@ -182,11 +182,11 @@ if __name__ == "__main__":
 
     args = _parse_args()
     model = ResNet18(args)
-    ckpt_path = str(Path(__file__).parents[0].resolve() / "checkpoints/")
-    checkpoint_callback = ModelCheckpoint(filepath=ckpt_path,save_top_k=args.save_top_k,verbose=True,monitor='val_loss',mode='min')
+    #ckpt_path = str(Path(__file__).parents[0].resolve() / "checkpoints/")
+    checkpoint_callback = ModelCheckpoint(filepath=args.ckpt_path,save_top_k=args.save_top_k,verbose=True,monitor='val_loss',mode='min')
 
-
-    trainer = pl.Trainer.from_argparse_args(args,checkpoint_callback=checkpoint_callback)
+    pl.Trainer()
+    trainer = pl.Trainer.from_argparse_args(args,default_root_dir=args.ckpt_path,checkpoint_callback=checkpoint_callback)
     trainer.fit(model,train_dataloader=train_loader,val_dataloaders=val_loader)
     trainer.test(test_dataloaders = test_loader)
     print(checkpoint_callback.best_model_path)
